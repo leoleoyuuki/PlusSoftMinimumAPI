@@ -1,17 +1,12 @@
-﻿using System.IO;
-using System.Runtime.InteropServices;
-using System.Text.RegularExpressions;
-using System.Xml.Linq;
-
-namespace ChllengePlusSoft.Models
+﻿namespace ChllengePlusSoft.Models
 {
-    public class ComportamentoNegociosModel
+    public class ComportamentoNegociosModelSoID
     {
         public long Id { get; set; }
         public long InteracoesPlataforma { get; set; }
         public long FrequenciaUso { get; set; }
         public string Feedback { get; set; }
         public string? UsoRecursosEspecificos { get; set; }
-        public EmpresaModelComId? Empresa { get; set; }
+        public long EmpresaId { get; set; }
     }
 }
