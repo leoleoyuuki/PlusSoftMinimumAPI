@@ -82,7 +82,7 @@ app.MapGet("/empresas", async () =>
                     TipoEmpresa = readerEmpresas.GetString(6),
                     Cliente = readerEmpresas.GetBoolean(7),
                     Tendencias = new List<TendenciaGastosModel>(),
-                    Desempenhos = new List<DesempenhoFinanceiroModel>(),
+                    Desempenhos = new List<DesempenhoFinanceiroModelSoID>(),
                     Historicos = new List<HistoricoInteracoes>(),
                     Comportamentos = new List<ComportamentoNegociosModel>()
                 };
@@ -165,7 +165,7 @@ app.MapGet("/empresas/{id}", async (int id) =>
                         TipoEmpresa = readerEmpresa.GetString(6),
                         Cliente = readerEmpresa.GetBoolean(7),
                         Tendencias = new List<TendenciaGastosModel>(),
-                        Desempenhos = new List<DesempenhoFinanceiroModel>(),
+                        Desempenhos = new List<DesempenhoFinanceiroModelSoID>(),
                         Historicos = new List<HistoricoInteracoes>(),
                         Comportamentos = new List<ComportamentoNegociosModel>()
                     };
@@ -392,14 +392,14 @@ async Task<EmpresaModelComId?> ObterEmpresaPorIdAsync(long empresaId, OracleConn
 
     var queryEmpresa = @"
         SELECT
-            Id AS id,
-                Nome AS nome,
-                Tamanho AS tamanho,
-                Setor AS setor,
-                Localizacao_Geografica AS localizacao_geografica,
-                Numero_Funcionarios AS numero_funcionarios,
-                Tipo_Empresa AS tipo_empresa,
-                Cliente AS cliente
+            ID,
+            NOME,
+            TAMANHO,
+            SETOR,
+            LOCALIZACAO_GEOGRAFICA,
+            NUMERO_FUNCIONARIOS,
+            TIPO_EMPRESA,
+            CLIENTE
         FROM EMPRESAS E
         WHERE E.ID = :empresaId
     ";
@@ -429,6 +429,7 @@ async Task<EmpresaModelComId?> ObterEmpresaPorIdAsync(long empresaId, OracleConn
 
     return empresa;
 }
+
 
 
 
@@ -581,31 +582,505 @@ app.MapDelete("/comportamento_negocios/{id}", async (long id) =>
     return Results.Ok(new { message = "Exclusão bem-sucedida." });
 }).WithTags("Comportamento Negócios");
 
-
-// Desempenho financeiro
-// POST DesempenhoFinanceiro
-app.MapPost("/desempenho_financeiro", async (DesempenhoFinanceiroModelSoID novoDesempenho, OracleConnection connection) =>
+// desempenho_financeiro
+app.MapGet("/desempenho_financeiro", async () =>
 {
-    await connection.OpenAsync();
+    var desempenhos = new List<DesempenhoFinanceiroModelSoID>();
 
-    var query = @"
-        INSERT INTO DESEMPENHO_FINANCEIRO 
-        (RECEITA, LUCRO, CRESCIMENTO, ID_EMPRESA) 
-        VALUES (:receita, :lucro, :crescimento, :empresaId)
-    ";
-
-    using (var command = new OracleCommand(query, connection))
+    using (var connection = new OracleConnection(connectionString))
     {
-        command.Parameters.Add(new OracleParameter("receita", novoDesempenho.Receita));
-        command.Parameters.Add(new OracleParameter("lucro", novoDesempenho.Lucro));
-        command.Parameters.Add(new OracleParameter("crescimento", novoDesempenho.Crescimento));
-        command.Parameters.Add(new OracleParameter("empresaId", novoDesempenho.EmpresaId));
+        await connection.OpenAsync();
 
-        await command.ExecuteNonQueryAsync();
+        var query = @"
+            SELECT
+                DF.ID,
+                DF.CRESCIMENTO,
+                DF.LUCRO,
+                DF.RECEITA,
+                DF.ID_EMPRESA
+            FROM DESEMPENHO_FINANCEIRO DF
+        ";
+
+        using (var command = new OracleCommand(query, connection))
+        using (var reader = await command.ExecuteReaderAsync())
+        {
+            while (await reader.ReadAsync())
+            {
+                var desempenho = new DesempenhoFinanceiroModelSoID
+                {
+                    Id = reader.GetInt64(0),
+                    Crescimento = reader.GetDouble(1), // Alterado para GetDouble
+                    Lucro = reader.GetDouble(2),       // Alterado para GetDouble
+                    Receita = reader.GetDouble(3),     // Alterado para GetDouble
+                    EmpresaId = reader.GetInt32(4) // Buscaremos a empresa posteriormente
+                };
+
+                
+                desempenhos.Add(desempenho);
+            }
+        }
     }
 
-    return Results.Ok("Desempenho financeiro inserido com sucesso.");
+    return desempenhos;
 }).WithTags("Desempenho Financeiro");
+
+// GET by ID
+app.MapGet("/desempenho_financeiro/{id}", async (long id) =>
+{
+    DesempenhoFinanceiroModelSoID? desempenho = null;
+
+    using (var connection = new OracleConnection(connectionString))
+    {
+        await connection.OpenAsync();
+
+        var query = @"
+            SELECT
+                DF.ID,
+                DF.CRESCIMENTO,
+                DF.LUCRO,
+                DF.RECEITA,
+                DF.ID_EMPRESA
+            FROM DESEMPENHO_FINANCEIRO DF
+            WHERE DF.ID = :id
+        ";
+
+        using (var command = new OracleCommand(query, connection))
+        {
+            command.Parameters.Add(new OracleParameter("id", id));
+
+            using (var reader = await command.ExecuteReaderAsync())
+            {
+                if (await reader.ReadAsync())
+                {
+                    desempenho = new DesempenhoFinanceiroModelSoID
+                    {
+                        Id = reader.GetInt64(0),
+                        Crescimento = reader.GetDouble(1),
+                        Lucro = reader.GetDouble(2),
+                        Receita = reader.GetDouble(3),
+                        EmpresaId = reader.GetInt32(4)
+                    };
+                }
+            }
+        }
+    }
+
+    return desempenho is not null ? Results.Ok(desempenho) : Results.NotFound();
+}).WithTags("Desempenho Financeiro");
+
+// POST
+app.MapPost("/desempenho_financeiro", async (DesempenhoPostModel novoDesempenho) =>
+{
+    using (var connection = new OracleConnection(connectionString))
+    {
+        await connection.OpenAsync();
+
+        var query = @"
+            INSERT INTO DESEMPENHO_FINANCEIRO (CRESCIMENTO, LUCRO, RECEITA, ID_EMPRESA)
+            VALUES (:crescimento, :lucro, :receita, :empresaId)
+        ";
+
+        using (var command = new OracleCommand(query, connection))
+        {
+            command.Parameters.Add(new OracleParameter("crescimento", OracleDbType.Decimal)).Value = novoDesempenho.Crescimento;
+            command.Parameters.Add(new OracleParameter("lucro", OracleDbType.Decimal)).Value = novoDesempenho.Lucro;
+            command.Parameters.Add(new OracleParameter("receita", OracleDbType.Decimal)).Value = novoDesempenho.Receita;
+            command.Parameters.Add(new OracleParameter("empresaId", OracleDbType.Int32)).Value = novoDesempenho.EmpresaId;
+
+            await command.ExecuteNonQueryAsync();
+        }
+     
+    }
+    return Results.Ok("Desempenho criado com sucesso");
+}).WithTags("Desempenho Financeiro");
+
+
+// PUT
+app.MapPut("/desempenho_financeiro/{id}", async (long id, DesempenhoPostModel desempenhoAtualizado) =>
+{
+    using (var connection = new OracleConnection(connectionString))
+    {
+        await connection.OpenAsync();
+
+        var query = @"
+            UPDATE DESEMPENHO_FINANCEIRO
+            SET CRESCIMENTO = :crescimento,
+                LUCRO = :lucro,
+                RECEITA = :receita,
+                ID_EMPRESA = :empresaId
+            WHERE ID = :id
+        ";
+
+        using (var command = new OracleCommand(query, connection))
+        {
+            command.Parameters.Add(new OracleParameter("crescimento", desempenhoAtualizado.Crescimento));
+            command.Parameters.Add(new OracleParameter("lucro", desempenhoAtualizado.Lucro));
+            command.Parameters.Add(new OracleParameter("receita", desempenhoAtualizado.Receita));
+            command.Parameters.Add(new OracleParameter("empresaId", desempenhoAtualizado.EmpresaId));
+            command.Parameters.Add(new OracleParameter("id", id));
+
+            var rowsAffected = await command.ExecuteNonQueryAsync();
+
+            return rowsAffected > 0 ? Results.NoContent() : Results.NotFound();
+        }
+    }
+}).WithTags("Desempenho Financeiro");
+
+// DELETE
+app.MapDelete("/desempenho_financeiro/{id}", async (long id) =>
+{
+    using (var connection = new OracleConnection(connectionString))
+    {
+        await connection.OpenAsync();
+
+        var query = @"
+            DELETE FROM DESEMPENHO_FINANCEIRO
+            WHERE ID = :id
+        ";
+
+        using (var command = new OracleCommand(query, connection))
+        {
+            command.Parameters.Add(new OracleParameter("id", id));
+
+            var rowsAffected = await command.ExecuteNonQueryAsync();
+
+            return rowsAffected > 0 ? Results.NoContent() : Results.NotFound();
+        }
+    }
+}).WithTags("Desempenho Financeiro");
+
+
+// GET all historico_interacoes
+app.MapGet("/historico_interacoes", async () =>
+{
+    var historicos = new List<HistoricoInteracoes>();
+
+    using (var connection = new OracleConnection(connectionString))
+    {
+        await connection.OpenAsync();
+
+        var query = @"
+            SELECT
+                HI.ID,
+                HI.PROPOSTA_NEGOCIO,
+                HI.CONTRATO_ASSINADO,
+                HI.FEEDBACK_SERVICOS_PRODUTOS,
+                HI.ID_EMPRESA
+            FROM HISTORICO_INTERACOES HI
+        ";
+
+        using (var command = new OracleCommand(query, connection))
+        using (var reader = await command.ExecuteReaderAsync())
+        {
+            while (await reader.ReadAsync())
+            {
+                var historico = new HistoricoInteracoes
+                {
+                    Id = reader.GetInt32(0),
+                    PropostaNegocio = reader.GetString(1),
+                    ContratoAssinado = reader.GetString(2),
+                    FeedbackServicosProdutos = reader.GetString(3),
+                    EmpresaId = reader.GetInt64(4)
+                };
+
+                historicos.Add(historico);
+            }
+        }
+    }
+
+    return historicos;
+}).WithTags("Historico Interações");
+
+// GET by ID
+app.MapGet("/historico_interacoes/{id}", async (int id) =>
+{
+    HistoricoInteracoes? historico = null;
+
+    using (var connection = new OracleConnection(connectionString))
+    {
+        await connection.OpenAsync();
+
+        var query = @"
+            SELECT
+                HI.ID,
+                HI.PROPOSTA_NEGOCIO,
+                HI.CONTRATO_ASSINADO,
+                HI.FEEDBACK_SERVICOS_PRODUTOS,
+                HI.ID_EMPRESA
+            FROM HISTORICO_INTERACOES HI
+            WHERE HI.ID = :id
+        ";
+
+        using (var command = new OracleCommand(query, connection))
+        {
+            command.Parameters.Add(new OracleParameter("id", id));
+
+            using (var reader = await command.ExecuteReaderAsync())
+            {
+                if (await reader.ReadAsync())
+                {
+                    historico = new HistoricoInteracoes
+                    {
+                        Id = reader.GetInt32(0),
+                        PropostaNegocio = reader.GetString(1),
+                        ContratoAssinado = reader.GetString(2),
+                        FeedbackServicosProdutos = reader.GetString(3),
+                        EmpresaId = reader.GetInt64(4)
+                    };
+                }
+            }
+        }
+    }
+
+    return historico is not null ? Results.Ok(historico) : Results.NotFound();
+}).WithTags("Historico Interações");
+
+// POST
+app.MapPost("/historico_interacoes", async (HistoricoInteracoesPostModel novoHistorico) =>
+{
+    using (var connection = new OracleConnection(connectionString))
+    {
+        await connection.OpenAsync();
+
+        var query = @"
+            INSERT INTO HISTORICO_INTERACOES (PROPOSTA_NEGOCIO, CONTRATO_ASSINADO, FEEDBACK_SERVICOS_PRODUTOS, ID_EMPRESA)
+            VALUES (:propostaNegocio, :contratoAssinado, :feedbackServicosProdutos, :empresaId)
+        ";
+
+        using (var command = new OracleCommand(query, connection))
+        {
+            command.Parameters.Add(new OracleParameter("propostaNegocio", novoHistorico.PropostaNegocio));
+            command.Parameters.Add(new OracleParameter("contratoAssinado", novoHistorico.ContratoAssinado));
+            command.Parameters.Add(new OracleParameter("feedbackServicosProdutos", novoHistorico.FeedbackServicosProdutos));
+            command.Parameters.Add(new OracleParameter("empresaId", novoHistorico.EmpresaId));
+
+            await command.ExecuteNonQueryAsync();
+        }
+    }
+
+    return Results.Ok("Histórico de Interação criado com sucesso");
+}).WithTags("Historico Interações");
+
+// PUT
+app.MapPut("/historico_interacoes/{id}", async (int id, HistoricoInteracoesPostModel historicoAtualizado) =>
+{
+    using (var connection = new OracleConnection(connectionString))
+    {
+        await connection.OpenAsync();
+
+        var query = @"
+            UPDATE HISTORICO_INTERACOES
+            SET PROPOSTA_NEGOCIO = :propostaNegocio,
+                CONTRATO_ASSINADO = :contratoAssinado,
+                FEEDBACK_SERVICOS_PRODUTOS = :feedbackServicosProdutos,
+                ID_EMPRESA = :empresaId
+            WHERE ID = :id
+        ";
+
+        using (var command = new OracleCommand(query, connection))
+        {
+            command.Parameters.Add(new OracleParameter("propostaNegocio", historicoAtualizado.PropostaNegocio));
+            command.Parameters.Add(new OracleParameter("contratoAssinado", historicoAtualizado.ContratoAssinado));
+            command.Parameters.Add(new OracleParameter("feedbackServicosProdutos", historicoAtualizado.FeedbackServicosProdutos));
+            command.Parameters.Add(new OracleParameter("empresaId", historicoAtualizado.EmpresaId));
+            command.Parameters.Add(new OracleParameter("id", id));
+
+            var rowsAffected = await command.ExecuteNonQueryAsync();
+
+            return rowsAffected > 0 ? Results.NoContent() : Results.NotFound();
+        }
+    }
+}).WithTags("Historico Interações");
+
+// DELETE
+app.MapDelete("/historico_interacoes/{id}", async (int id) =>
+{
+    using (var connection = new OracleConnection(connectionString))
+    {
+        await connection.OpenAsync();
+
+        var query = @"
+            DELETE FROM HISTORICO_INTERACOES
+            WHERE ID = :id
+        ";
+
+        using (var command = new OracleCommand(query, connection))
+        {
+            command.Parameters.Add(new OracleParameter("id", id));
+
+            var rowsAffected = await command.ExecuteNonQueryAsync();
+
+            return rowsAffected > 0 ? Results.NoContent() : Results.NotFound();
+        }
+    }
+}).WithTags("Historico Interações");
+
+
+// Obter todos os registros
+app.MapGet("/tendencia_gastos", async () =>
+{
+    var tendencias = new List<TendenciaGastosModel>();
+
+    using (var connection = new OracleConnection(connectionString))
+    {
+        await connection.OpenAsync();
+
+        var query = @"
+            SELECT
+                TG.ID,
+                TG.ANO,
+                TG.GASTO_MARKETING,
+                TG.GASTO_AUTOMACAO,
+                TG.ID_EMPRESA
+            FROM TENDENCIAS_GASTOS TG
+        ";
+
+        using (var command = new OracleCommand(query, connection))
+        using (var reader = await command.ExecuteReaderAsync())
+        {
+            while (await reader.ReadAsync())
+            {
+                var tendencia = new TendenciaGastosModel
+                {
+                    Id = reader.GetInt64(0),
+                    Ano = reader.GetInt32(1),
+                    GastoMarketing = reader.GetDouble(2),
+                    GastoAutomacao = reader.GetDouble(3),
+                    EmpresaId = reader.GetInt64(4)
+                };
+
+                tendencias.Add(tendencia);
+            }
+        }
+    }
+
+    return tendencias;
+}).WithTags("Tendência Gastos");
+
+// Obter registro por ID
+app.MapGet("/tendencia_gastos/{id}", async (long id) =>
+{
+    TendenciaGastosModel? tendencia = null;
+
+    using (var connection = new OracleConnection(connectionString))
+    {
+        await connection.OpenAsync();
+
+        var query = @"
+            SELECT
+                TG.ID,
+                TG.ANO,
+                TG.GASTO_MARKETING,
+                TG.GASTO_AUTOMACAO,
+                TG.ID_EMPRESA
+            FROM TENDENCIAS_GASTOS TG
+            WHERE TG.ID = :id
+        ";
+
+        using (var command = new OracleCommand(query, connection))
+        {
+            command.Parameters.Add(new OracleParameter("id", id));
+
+            using (var reader = await command.ExecuteReaderAsync())
+            {
+                if (await reader.ReadAsync())
+                {
+                    tendencia = new TendenciaGastosModel
+                    {
+                        Id = reader.GetInt64(0),
+                        Ano = reader.GetInt32(1),
+                        GastoMarketing = reader.GetDouble(2),
+                        GastoAutomacao = reader.GetDouble(3),
+                        EmpresaId = reader.GetInt64(4)
+                    };
+                }
+            }
+        }
+    }
+
+    return tendencia is not null ? Results.Ok(tendencia) : Results.NotFound();
+}).WithTags("Tendência Gastos");
+
+// Inserir novo registro
+app.MapPost("/tendencia_gastos", async (TendenciaGastosPostModel novaTendencia) =>
+{
+    using (var connection = new OracleConnection(connectionString))
+    {
+        await connection.OpenAsync();
+
+        var query = @"
+            INSERT INTO TENDENCIAS_GASTOS (ANO, GASTO_MARKETING, GASTO_AUTOMACAO, ID_EMPRESA)
+            VALUES (:ano, :gastoMarketing, :gastoAutomacao, :empresaId)
+        ";
+
+        using (var command = new OracleCommand(query, connection))
+        {
+            command.Parameters.Add(new OracleParameter("ano", OracleDbType.Int32)).Value = novaTendencia.Ano;
+            command.Parameters.Add(new OracleParameter("gastoMarketing", OracleDbType.Decimal)).Value = novaTendencia.GastoMarketing;
+            command.Parameters.Add(new OracleParameter("gastoAutomacao", OracleDbType.Decimal)).Value = novaTendencia.GastoAutomacao;
+            command.Parameters.Add(new OracleParameter("empresaId", OracleDbType.Int64)).Value = novaTendencia.EmpresaId;
+
+            await command.ExecuteNonQueryAsync();
+        }
+    }
+
+    return Results.Ok("Tendência de gastos criada com sucesso");
+}).WithTags("Tendência Gastos");
+
+// Atualizar registro por ID
+app.MapPut("/tendencia_gastos/{id}", async (long id, TendenciaGastosPostModel tendenciaAtualizada) =>
+{
+    using (var connection = new OracleConnection(connectionString))
+    {
+        await connection.OpenAsync();
+
+        var query = @"
+            UPDATE TENDENCIAS_GASTOS
+            SET ANO = :ano,
+                GASTO_MARKETING = :gastoMarketing,
+                GASTO_AUTOMACAO = :gastoAutomacao,
+                ID_EMPRESA = :empresaId
+            WHERE ID = :id
+        ";
+
+        using (var command = new OracleCommand(query, connection))
+        {
+            command.Parameters.Add(new OracleParameter("ano", tendenciaAtualizada.Ano));
+            command.Parameters.Add(new OracleParameter("gastoMarketing", tendenciaAtualizada.GastoMarketing));
+            command.Parameters.Add(new OracleParameter("gastoAutomacao", tendenciaAtualizada.GastoAutomacao));
+            command.Parameters.Add(new OracleParameter("empresaId", tendenciaAtualizada.EmpresaId));
+            command.Parameters.Add(new OracleParameter("id", id));
+
+            var rowsAffected = await command.ExecuteNonQueryAsync();
+
+            return rowsAffected > 0 ? Results.NoContent() : Results.NotFound();
+        }
+    }
+}).WithTags("Tendência Gastos");
+
+// Deletar registro por ID
+app.MapDelete("/tendencia_gastos/{id}", async (long id) =>
+{
+    using (var connection = new OracleConnection(connectionString))
+    {
+        await connection.OpenAsync();
+
+        var query = @"
+            DELETE FROM TENDENCIAS_GASTOS
+            WHERE ID = :id
+        ";
+
+        using (var command = new OracleCommand(query, connection))
+        {
+            command.Parameters.Add(new OracleParameter("id", id));
+
+            var rowsAffected = await command.ExecuteNonQueryAsync();
+
+            return rowsAffected > 0 ? Results.NoContent() : Results.NotFound();
+        }
+    }
+}).WithTags("Tendência Gastos");
+
 
 
 app.Run();

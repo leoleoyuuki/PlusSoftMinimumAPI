@@ -1,10 +1,7 @@
-﻿using System.Diagnostics.CodeAnalysis;
-
-namespace ChllengePlusSoft.Models
+﻿namespace ChllengePlusSoft.Models
 {
-    public class HistoricoInteracoes
+    public class HistoricoInteracoesPostModel
     {
-        public int Id { get; set; }
         public string? PropostaNegocio { get; set; }
         public string? ContratoAssinado { get; set; }
         public string? FeedbackServicosProdutos { get; set; }
