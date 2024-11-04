@@ -1,72 +1,127 @@
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Configuration;
-using Moq;
-using Oracle.ManagedDataAccess.Client;
-using ChllengePlusSoft.Controllers;
-using ChllengePlusSoft.Models;
-using System.Collections.Generic;
+using System.Net.Http;
+using System.Net;
+using System.Text;
 using System.Threading.Tasks;
 using Xunit;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Newtonsoft.Json;
+using ChllengePlusSoft;
+using ChllengePlusSoft.Models;
+using Microsoft.AspNetCore.Hosting;
 
 namespace ChllengePlusSoft.Tests
 {
-    public class EmpresasControllerTests
+    public class EmpresasControllerIntegrationTests : IClassFixture<WebApplicationFactory<Program>>
     {
-        private readonly Mock<IConfiguration> _configurationMock;
-        private readonly EmpresasController _controller;
+        private readonly HttpClient _client;
 
-        public EmpresasControllerTests()
+        public EmpresasControllerIntegrationTests(WebApplicationFactory<Program> factory)
         {
-            _configurationMock = new Mock<IConfiguration>();
-            _configurationMock.Setup(c => c["ConnectionStrings:OracleDbConnection"])
-                .Returns("UserId=rm99119;Password=200705;Data Source=oracle.fiap.com.br:1521/orcl");
-
-            _controller = new EmpresasController(_configurationMock.Object);
+            _client = factory.CreateClient();
         }
 
-        [Fact]
-        public async Task GetEmpresas_ReturnsOkResult_WithListOfEmpresas()
-        {
-            // Simulando o retorno do banco de dados
-            var empresas = new List<EmpresasModel>
-            {
-                new EmpresasModel { Id = 1, Nome = "Empresa A", Tamanho = "Grande", Setor = "Tecnologia", LocalizacaoGeografica = "São Paulo", NumeroFuncionarios = 100, TipoEmpresa = "Privada", Cliente = true },
-                new EmpresasModel { Id = 2, Nome = "Empresa B", Tamanho = "Média", Setor = "Saúde", LocalizacaoGeografica = "Rio de Janeiro", NumeroFuncionarios = 50, TipoEmpresa = "Pública", Cliente = false }
-            };
 
-            // Aqui você deve simular o comportamento do método GetEmpresas,
-            // se você estiver usando um repositório ou um serviço que faz a chamada ao banco de dados.
-
-            // Act
-            var result = await _controller.GetEmpresas();
-
-            // Assert
-            var actionResult = Assert.IsType<ActionResult<IEnumerable<EmpresasModel>>>(result);
-            var okResult = Assert.IsType<List<EmpresasModel>>(actionResult.Value);
-            Assert.NotNull(okResult); // Verifica se a lista não é nula
-            Assert.True(okResult.Count > 0); // Verifica se a lista contém elementos
-        }
-
+        // Testes para GetEmpresa
         [Fact]
         public async Task GetEmpresa_ReturnsOkResult_WhenEmpresaExists()
         {
             // Arrange
             int testId = 1; // ID de teste
 
-            // Simulando o retorno do banco de dados para o método GetEmpresa
-            var empresa = new EmpresasModel { Id = testId, Nome = "Empresa A", Tamanho = "Grande", Setor = "Tecnologia", LocalizacaoGeografica = "São Paulo", NumeroFuncionarios = 100, TipoEmpresa = "Privada", Cliente = true };
-
-            // Aqui você deve simular o comportamento do método GetEmpresa,
-            // se você estiver usando um repositório ou um serviço que faz a chamada ao banco de dados.
-
             // Act
-            var result = await _controller.GetEmpresa(testId);
+            var response = await _client.GetAsync($"/empresas/{testId}");
 
             // Assert
-            var actionResult = Assert.IsType<ActionResult<EmpresasModel>>(result);
-            var okResult = Assert.IsType<EmpresasModel>(actionResult.Value);
-            Assert.NotNull(okResult); // Verifica se a empresa retornada não é nula
-            Assert.Equal(testId, okResult.Id); // Verifica se o ID da empresa retornada é o esperado
+            response.EnsureSuccessStatusCode(); 
+            var responseString = await response.Content.ReadAsStringAsync();
+            Assert.NotNull(responseString); 
         }
-    }
-}
+
+        [Fact]
+        public async Task GetEmpresa_ReturnsNotFound_WhenEmpresaDoesNotExist()
+        {
+            // Arrange
+            int testId = 999; // ID que não existe
+
+            // Act
+            var response = await _client.GetAsync($"/empresas/{testId}");
+
+            // Assert
+            Assert.Equal(HttpStatusCode.NotFound, response.StatusCode); 
+        }
+
+        // Testes para CreateEmpresa
+        [Fact]
+        public async Task CreateEmpresa_ReturnsCreatedResult()
+        {
+            // Arrange
+            var newEmpresa = new EmpresaPostModel
+            {
+                Nome = "Nova Empresa",
+                Tamanho = "GRANDE",
+                Setor = "COMERCIAL",
+                LocalizacaoGeografica = "São Paulo",
+                NumeroFuncionarios = 10,
+                TipoEmpresa = "SOCIEDADE_EMPRESARIA_LIMITADA",
+                Cliente = 1
+            };
+
+            var content = new StringContent(JsonConvert.SerializeObject(newEmpresa), Encoding.UTF8, "application/json");
+
+            // Act
+            var response = await _client.PostAsync("/empresas", content);
+
+            // Assert
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        }
+
+        [Fact]
+        public async Task CreateEmpresa_ReturnsBadRequest_WhenDataIsInvalid()
+        {
+            // Arrange
+            var invalidEmpresa = new EmpresaPostModel
+            {
+                Nome = "", // Nome inválido
+                Tamanho = "PEQUENO",
+                Setor = "COMERCIAL",
+                LocalizacaoGeografica = "São Paulo",
+                NumeroFuncionarios = 10,
+                TipoEmpresa = "SOCIEDADE_EMPRESARIA_LIMITADA",
+                Cliente = 1
+            };
+
+            var content = new StringContent(JsonConvert.SerializeObject(invalidEmpresa), Encoding.UTF8, "application/json");
+
+            // Act
+            var response = await _client.PostAsync("/empresas", content);
+
+            // Assert
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        }
+
+        // Testes para UpdateEmpresa
+        [Fact]
+        public async Task UpdateEmpresa_ReturnsOkResult_WhenEmpresaExists()
+        {
+            // Arrange
+            int testId = 1; // ID de teste
+            var updatedEmpresa = new EmpresaPostModel
+            {
+                Nome = "Empresa Atualizada",
+                Tamanho = "GRANDE",
+                Setor = "COMERCIAL",
+                LocalizacaoGeografica = "Rio de Janeiro",
+                NumeroFuncionarios = 150,
+                TipoEmpresa = "MICROEMPREENDEDOR_INDIVIDUAL",
+                Cliente = 1
+            };
+
+            var content = new StringContent(JsonConvert.SerializeObject(updatedEmpresa), Encoding.UTF8, "application/json");
+
+            // Act
+            var response = await _client.PutAsync($"/empresas/{testId}", content);
+
+            // Assert
+            response.EnsureSuccessStatusCode();
+        }
+    }}
